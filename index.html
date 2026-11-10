@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>:root{color-scheme:light}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>Radar de Arbitraje</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: mesa de operaciones — barra de control arriba, dos tableros (USDT y pesos) en lista escaneable */
+:root{
+  --bg:#f3f5f6; --panel:#ffffff; --line:#dde3e6; --fg:#14202a; --muted:#5d6b75;
+  --accent:#1f5fd1; --good:#0f8a5f; --good-bg:#e3f4ec; --warn:#a86500; --warn-bg:#fdf0db; --bad:#b4372f; --bad-bg:#fbe6e4;
+  --f-display:"Archivo",system-ui,sans-serif; --f-body:"IBM Plex Sans",system-ui,sans-serif; --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0e1419; --panel:#151d24; --line:#26323c; --fg:#e4ebf0; --muted:#8c9aa5; --accent:#6ea0ff;
+  --good:#3fd09a; --good-bg:#12302a; --warn:#f0b04a; --warn-bg:#33270f; --bad:#ff7f73; --bad-bg:#3a1a18; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1419; --panel:#151d24; --line:#26323c; --fg:#e4ebf0; --muted:#8c9aa5; --accent:#6ea0ff;
+  --good:#3fd09a; --good-bg:#12302a; --warn:#f0b04a; --warn-bg:#33270f; --bad:#ff7f73; --bad-bg:#3a1a18; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.45}
+.wrap{max-width:1000px;margin:0 auto;padding-block:20px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:18px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+h1{font-family:var(--f-display);font-weight:800;font-size:1.7rem;margin:0;letter-spacing:-.01em;text-wrap:balance}
+.sub{color:var(--muted);font-size:.9rem;margin:2px 0 0}
+button{font:600 .9rem var(--f-body);background:var(--accent);color:#fff;border:0;border-radius:8px;padding:9px 16px;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button[disabled]{opacity:.6;cursor:wait}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;display:grid;gap:12px;min-width:0}
+.cfg{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.cfg label{display:grid;gap:4px;font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+.cfg input,.cfg select{font:500 .95rem var(--f-mono);color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:7px 8px;width:100%;box-sizing:border-box}
+.check{display:flex!important;align-items:center;gap:8px;text-transform:none!important;letter-spacing:0!important;font-size:.9rem!important;color:var(--fg)!important}
+.check input{width:auto}
+h2{font-family:var(--f-display);font-weight:700;font-size:1.15rem;margin:0}
+.head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:600 .72rem var(--f-mono);padding:3px 8px;border-radius:99px;background:var(--bg);color:var(--muted);border:1px solid var(--line)}
+.chip.ok{background:var(--good-bg);color:var(--good);border-color:transparent}
+.chip.err{background:var(--bad-bg);color:var(--bad);border-color:transparent}
+.list{display:grid;gap:0}
+.row{display:grid;grid-template-columns:90px 1fr 92px 96px;gap:10px;align-items:center;padding:10px 4px;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}
+.row.hdr{border-top:0;font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;padding-top:0}
+.coin{font:600 .95rem var(--f-mono)}
+.route{min-width:0;font-size:.88rem}
+.route b{font-weight:600}
+.route small{display:block;color:var(--muted);font:400 .75rem var(--f-mono);overflow-wrap:anywhere}
+.num{text-align:right;font:600 .95rem var(--f-mono)}
+.pos{color:var(--good)} .neg{color:var(--muted)}
+.flag{display:inline-block;margin-top:3px;font:600 .68rem var(--f-body);padding:2px 6px;border-radius:4px;background:var(--warn-bg);color:var(--warn)}
+.mine{display:inline-block;font:600 .62rem var(--f-body);padding:1px 5px;border-radius:4px;background:var(--accent);color:#fff;margin-left:4px;vertical-align:1px}
+.empty{color:var(--muted);padding:14px 4px;border-top:1px solid var(--line)}
+.note{color:var(--muted);font-size:.82rem;margin:0}
+.summary{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:.88rem}
+.summary b{font-family:var(--f-mono)}
+@media (max-width:560px){
+  .row{grid-template-columns:1fr auto;grid-template-areas:"coin net" "route usd";row-gap:2px}
+  .row.hdr{display:none}
+  .coin{grid-area:coin} .route{grid-area:route} .c-net{grid-area:net} .c-usd{grid-area:usd}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Radar de Arbitraje</h1>
+      <p class="sub" id="stamp">Cargando precios…</p>
+    </div>
+    <button id="refresh" type="button">Actualizar</button>
+  </header>
+
+  <section class="panel" aria-label="Ajustes">
+    <div class="cfg">
+      <label for="amount">Monto por operación (USD)<input id="amount" type="number" min="10" step="10" value="500"></label>
+      <label for="transfer">Costo de mover la moneda (USD)<input id="transfer" type="number" min="0" step="0.1" value="1.5"></label>
+      <label for="slip">Deslizamiento por lado (%)<input id="slip" type="number" min="0" step="0.05" value="0.1"></label>
+      <label for="minvol">Volumen mínimo 24 h (USD)<select id="minvol"><option value="50000">50 mil</option><option value="200000" selected>200 mil</option><option value="1000000">1 millón</option><option value="5000000">5 millones</option></select></label>
+    </div>
+    <label class="check" for="onlymine"><input id="onlymine" type="checkbox"> Solo donde tengo cuenta (Binance y Bybit)</label>
+    <p class="note">La ganancia ya descuenta comisión de compra y venta, deslizamiento y el costo de mover la moneda. Se actualiza sola cada 30 segundos mientras la página está abierta.</p>
+  </section>
+
+  <section class="panel" aria-labelledby="t-int">
+    <div class="head"><h2 id="t-int">Cripto en USDT · exchanges internacionales</h2><div class="chips" id="chips-int"></div></div>
+    <div class="summary" id="sum-int"></div>
+    <div class="list" id="list-int"></div>
+    <p class="note">Diferencias de más de 3 % casi siempre son falsas: la moneda tiene retiros o depósitos suspendidos en un exchange, o es otro token con el mismo nombre. Verificá la red y que estén habilitados antes de mover nada.</p>
+  </section>
+
+  <section class="panel" aria-labelledby="t-ars">
+    <div class="head"><h2 id="t-ars">Cripto en pesos · exchanges argentinos</h2><div class="chips" id="chips-ars"></div></div>
+    <div class="summary" id="sum-ars"></div>
+    <div class="list" id="list-ars"></div>
+    <p class="note">Precios en pesos de CriptoYa, con las comisiones de cada exchange ya incluidas. En P2P el precio depende del anunciante y puede pedir montos mínimos.</p>
+  </section>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const MINE = ["binance","bybit"];
+const FEES = {Binance:.001, Bybit:.001, OKX:.001, Gate:.001, KuCoin:.001, MEXC:.0005};
+const STABLE = new Set(["USDT","USDC","FDUSD","TUSD","DAI","BUSD","USDE","PYUSD","USD1","EUR","EURI","USDP","UST"]);
+
+const SOURCES = {
+  Binance: async () => { const r = await getJSON("https://api.binance.com/api/v3/ticker/24hr");
+    return r.filter(t=>t.symbol.endsWith("USDT")).map(t=>[t.symbol.slice(0,-4),+t.bidPrice,+t.askPrice,+t.quoteVolume]); },
+  Bybit: async () => { const r = await getJSON("https://api.bybit.com/v5/market/tickers?category=spot");
+    return r.result.list.filter(t=>t.symbol.endsWith("USDT")).map(t=>[t.symbol.slice(0,-4),+t.bid1Price,+t.ask1Price,+t.turnover24h]); },
+  OKX: async () => { const r = await getJSON("https://www.okx.com/api/v5/market/tickers?instType=SPOT");
+    return r.data.filter(t=>t.instId.endsWith("-USDT")).map(t=>[t.instId.slice(0,-5),+t.bidPx,+t.askPx,+t.volCcy24h]); },
+  Gate: async () => { const r = await getJSON("https://api.gateio.ws/api/v4/spot/tickers");
+    return r.filter(t=>t.currency_pair.endsWith("_USDT")).map(t=>[t.currency_pair.slice(0,-5),+t.highest_bid,+t.lowest_ask,+t.quote_volume]); },
+  KuCoin: async () => { const r = await getJSON("https://api.kucoin.com/api/v1/market/allTickers");
+    return r.data.ticker.filter(t=>t.symbol.endsWith("-USDT")).map(t=>[t.symbol.slice(0,-5),+t.buy,+t.sell,+t.volValue]); },
+  MEXC: async () => { const r = await getJSON("https://api.mexc.com/api/v3/ticker/24hr");
+    return r.filter(t=>t.symbol.endsWith("USDT")).map(t=>[t.symbol.slice(0,-4),+t.bidPrice,+t.askPrice,+t.quoteVolume]); },
+};
+
+async function getJSON(url, ms=12000){
+  const c = new AbortController(); const tm = setTimeout(()=>c.abort(), ms);
+  try { const r = await fetch(url,{signal:c.signal}); if(!r.ok) throw new Error(r.status); return await r.json(); }
+  finally { clearTimeout(tm); }
+}
+
+let intData = {}, intStatus = {}, arsData = {}, arsStatus = {}, busy = false;
+
+function settings(){
+  return { amount: Math.max(10, +$("amount").value||500), transfer: Math.max(0, +$("transfer").value||0),
+    slip: Math.max(0, +$("slip").value||0)/100, minvol: +$("minvol").value, onlymine: $("onlymine").checked };
+}
+function isMine(name){ const n=name.toLowerCase(); return MINE.some(m=>n.includes(m)); }
+const fmtPct = x => (x>=0?"+":"")+(x*100).toFixed(2)+" %";
+const fmtUsd = x => (x>=0?"+":"−")+"US$ "+Math.abs(x).toFixed(2);
+const fmtArs = x => (x>=0?"+":"−")+"$ "+Math.abs(Math.round(x)).toLocaleString("es-AR");
+function fmtP(p){ if(p>=1000) return p.toLocaleString("es-AR",{maximumFractionDigits:0}); if(p>=1) return p.toFixed(3); return p.toPrecision(4); }
+
+/* ---------- Internacional ---------- */
+function computeInt(){
+  const s = settings(); const byCoin = {};
+  for(const [ex, rows] of Object.entries(intData)){
+    if(s.onlymine && !isMine(ex)) continue;
+    for(const [coin,bid,ask,vol] of rows){
+      if(STABLE.has(coin) || !(bid>0) || !(ask>0) || ask<bid || vol < s.minvol) continue;
+      if((ask-bid)/ask > 0.02) continue; // libro sin liquidez real
+      (byCoin[coin] ||= []).push({ex,bid,ask,vol});
+    }
+  }
+  const opps = [];
+  for(const [coin,list] of Object.entries(byCoin)){
+    if(list.length<2) continue;
+    let best=null;
+    for(const a of list) for(const b of list){
+      if(a.ex===b.ex) continue;
+      const buy = a.ask*(1+FEES[a.ex])*(1+s.slip), sell = b.bid*(1-FEES[b.ex])*(1-s.slip);
+      const gross = b.bid/a.ask - 1;
+      const net = sell/buy - 1 - s.transfer/s.amount;
+      if(!best || net>best.net) best={coin,buy:a,sell:b,gross,net,usd:net*s.amount};
+    }
+    opps.push(best);
+  }
+  return opps.sort((x,y)=>y.net-x.net);
+}
+function renderInt(){
+  renderChips("chips-int", intStatus);
+  const opps = computeInt(); const s = settings();
+  const good = opps.filter(o=>o.net>0 && o.gross<=0.03);
+  $("sum-int").innerHTML = `<span>Monedas comparadas: <b>${opps.length}</b></span><span>Con ganancia neta: <b>${good.length}</b></span>`;
+  const top = opps.slice(0,25);
+  $("list-int").innerHTML = header("USD") + (top.length ? top.map(o=>{
+    const flag = o.gross>0.03 ? `<span class="flag">Revisar: diferencia sospechosa</span>` : "";
+    return `<div class="row"><div class="coin">${esc(o.coin)}</div>
+      <div class="route">Comprar en <b>${o.buy.ex}</b>${isMine(o.buy.ex)?'<span class="mine">tu cuenta</span>':''} → vender en <b>${o.sell.ex}</b>${isMine(o.sell.ex)?'<span class="mine">tu cuenta</span>':''}
+      <small>${fmtP(o.buy.ask)} → ${fmtP(o.sell.bid)} · bruto ${fmtPct(o.gross)}</small>${flag}</div>
+      <div class="num c-net ${o.net>0?'pos':'neg'}">${fmtPct(o.net)}</div>
+      <div class="num c-usd ${o.net>0?'pos':'neg'}">${fmtUsd(o.usd)}</div></div>`;}).join("")
+    : `<div class="empty">${Object.keys(intData).length<2 ? "Hacen falta al menos dos exchanges con datos." : "Ninguna moneda pasa los filtros."}</div>`);
+}
+
+/* ---------- Pesos (CriptoYa) ---------- */
+const ARS_COINS = ["USDT","USDC","BTC","ETH"];
+function arsVolume(coin){
+  const s = settings();
+  if(coin==="USDT"||coin==="USDC") return s.amount;
+  const px = refPrice(coin) || (coin==="BTC"?100000:3500);
+  return +(s.amount/px).toPrecision(3);
+}
+function refPrice(coin){
+  for(const rows of Object.values(intData)){ const r = rows.find(x=>x[0]===coin); if(r && r[2]>0) return r[2]; }
+  return null;
+}
+async function loadArs(){
+  arsStatus = {}; arsData = {};
+  await Promise.all(ARS_COINS.map(async coin=>{
+    try { arsData[coin] = await getJSON(`https://criptoya.com/api/${coin.toLowerCase()}/ars/${arsVolume(coin)}`); arsStatus[coin]=true; }
+    catch(e){ arsStatus[coin]=false; }
+  }));
+}
+function computeArs(){
+  const s = settings(); const now = Date.now()/1000;
+  const usdtArs = bestMid("USDT");
+  const opps = [];
+  for(const coin of ARS_COINS){
+    const d = arsData[coin]; if(!d) continue;
+    const list = Object.entries(d).filter(([ex,v])=>v && v.totalAsk>0 && v.totalBid>0 && (!v.time || now-v.time < 900) && (!s.onlymine || isMine(ex)));
+    if(list.length<2) continue;
+    const vol = arsVolume(coin);
+    const transferArs = (coin==="USDT"||coin==="USDC") ? s.transfer*(usdtArs||0) : s.transfer*(usdtArs||0);
+    let best=null;
+    for(const [ea,a] of list) for(const [eb,b] of list){
+      if(ea===eb) continue;
+      const buy = a.totalAsk*(1+s.slip), sell = b.totalBid*(1-s.slip);
+      const cost = buy*vol;
+      const net = sell/buy - 1 - (cost? transferArs/cost : 0);
+      if(!best || net>best.net) best={coin,ea,eb,ask:a.totalAsk,bid:b.totalBid,gross:b.totalBid/a.totalAsk-1,net,ars:net*cost};
+    }
+    opps.push(best);
+  }
+  return opps.sort((x,y)=>y.net-x.net);
+}
+function bestMid(coin){
+  const d = arsData[coin]; if(!d) return null;
+  const v = Object.values(d).filter(x=>x && x.totalAsk>0); if(!v.length) return null;
+  return v.map(x=>x.totalAsk).sort((a,b)=>a-b)[Math.floor(v.length/2)];
+}
+const exName = k => k.replace(/p2p$/i," P2P").replace(/^./,c=>c.toUpperCase());
+function renderArs(){
+  renderChips("chips-ars", arsStatus);
+  const opps = computeArs();
+  const usdt = bestMid("USDT");
+  $("sum-ars").innerHTML = usdt ? `<span>USDT de referencia: <b>$ ${Math.round(usdt).toLocaleString("es-AR")}</b></span><span>Con ganancia neta: <b>${opps.filter(o=>o.net>0).length}</b> de ${opps.length}</span>` : "";
+  $("list-ars").innerHTML = header("ARS") + (opps.length ? opps.map(o=>`<div class="row"><div class="coin">${o.coin}</div>
+      <div class="route">Comprar en <b>${esc(exName(o.ea))}</b>${isMine(o.ea)?'<span class="mine">tu cuenta</span>':''} → vender en <b>${esc(exName(o.eb))}</b>${isMine(o.eb)?'<span class="mine">tu cuenta</span>':''}
+      <small>$ ${Math.round(o.ask).toLocaleString("es-AR")} → $ ${Math.round(o.bid).toLocaleString("es-AR")} · bruto ${fmtPct(o.gross)}</small></div>
+      <div class="num c-net ${o.net>0?'pos':'neg'}">${fmtPct(o.net)}</div>
+      <div class="num c-usd ${o.net>0?'pos':'neg'}">${fmtArs(o.ars)}</div></div>`).join("")
+    : `<div class="empty">Sin datos de exchanges argentinos por ahora.</div>`);
+}
+
+/* ---------- Común ---------- */
+function header(cur){ return `<div class="row hdr"><div>Moneda</div><div>Ruta</div><div class="num">Neto</div><div class="num">Ganancia ${cur}</div></div>`; }
+function renderChips(id, st){
+  $(id).innerHTML = Object.entries(st).map(([k,ok])=>`<span class="chip ${ok?'ok':'err'}" title="${ok?'Datos recibidos':'No respondió'}">${esc(k)} ${ok?'✓':'sin datos'}</span>`).join("");
+}
+function esc(t){ return String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+async function refresh(){
+  if(busy) return; busy=true; $("refresh").disabled=true; $("refresh").textContent="Actualizando…";
+  const nd={}, ns={};
+  await Promise.all(Object.entries(SOURCES).map(async([ex,fn])=>{
+    try{ nd[ex]=await fn(); ns[ex]=true; }catch(e){ ns[ex]=false; }
+  }));
+  intData=nd; intStatus=ns;
+  await loadArs();
+  renderInt(); renderArs();
+  $("stamp").textContent = "Última actualización: " + new Date().toLocaleTimeString("es-AR");
+  busy=false; $("refresh").disabled=false; $("refresh").textContent="Actualizar";
+}
+
+/* recordar ajustes en este navegador */
+const KEYS=["amount","transfer","slip","minvol","onlymine"];
+try{ const saved=JSON.parse(localStorage.getItem("radar-cfg")||"{}");
+  KEYS.forEach(k=>{ if(k in saved){ if(k==="onlymine") $(k).checked=saved[k]; else $(k).value=saved[k]; }}); }catch(e){}
+KEYS.forEach(k=>$(k).addEventListener("change",()=>{
+  try{ const o={}; KEYS.forEach(x=>o[x]= x==="onlymine"?$(x).checked:$(x).value); localStorage.setItem("radar-cfg",JSON.stringify(o)); }catch(e){}
+  renderInt(); renderArs();
+}));
+$("refresh").addEventListener("click",refresh);
+refresh();
+setInterval(()=>{ if(!document.hidden) refresh(); },30000);
+</script>
+
+</body>
+</html>
