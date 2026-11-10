@@ -104,7 +104,7 @@ h2{font-family:var(--f-display);font-weight:700;font-size:1.15rem;margin:0}
 <script>
 const $ = id => document.getElementById(id);
 const MINE = ["binance","bybit"];
-const FEES = {Binance:.001, Bybit:.001, OKX:.001, Gate:.001, KuCoin:.001, MEXC:.0005};
+const FEES = {Binance:.001, Bybit:.001, OKX:.001, Gate:.001};
 const STABLE = new Set(["USDT","USDC","FDUSD","TUSD","DAI","BUSD","USDE","PYUSD","USD1","EUR","EURI","USDP","UST"]);
 
 const SOURCES = {
@@ -116,10 +116,6 @@ const SOURCES = {
     return r.data.filter(t=>t.instId.endsWith("-USDT")).map(t=>[t.instId.slice(0,-5),+t.bidPx,+t.askPx,+t.volCcy24h]); },
   Gate: async () => { const r = await getJSON("https://api.gateio.ws/api/v4/spot/tickers");
     return r.filter(t=>t.currency_pair.endsWith("_USDT")).map(t=>[t.currency_pair.slice(0,-5),+t.highest_bid,+t.lowest_ask,+t.quote_volume]); },
-  KuCoin: async () => { const r = await getJSON("https://api.kucoin.com/api/v1/market/allTickers");
-    return r.data.ticker.filter(t=>t.symbol.endsWith("-USDT")).map(t=>[t.symbol.slice(0,-5),+t.buy,+t.sell,+t.volValue]); },
-  MEXC: async () => { const r = await getJSON("https://api.mexc.com/api/v3/ticker/24hr");
-    return r.filter(t=>t.symbol.endsWith("USDT")).map(t=>[t.symbol.slice(0,-4),+t.bidPrice,+t.askPrice,+t.quoteVolume]); },
 };
 
 async function getJSON(url, ms=12000){
