@@ -54,6 +54,9 @@ h2{font-family:var(--f-display);font-weight:700;font-size:1.15rem;margin:0}
 .pos{color:var(--good)} .neg{color:var(--muted)}
 .flag{display:inline-block;margin-top:3px;font:600 .68rem var(--f-body);padding:2px 6px;border-radius:4px;background:var(--warn-bg);color:var(--warn)}
 .mine{display:inline-block;font:600 .62rem var(--f-body);padding:1px 5px;border-radius:4px;background:var(--accent);color:#fff;margin-left:4px;vertical-align:1px}
+.actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+button.ghost{background:transparent;color:var(--accent);border:1px solid var(--line)}
+.real{display:inline-block;font:600 .62rem var(--f-body);padding:1px 5px;border-radius:4px;background:var(--good-bg);color:var(--good);margin-left:4px}
 .empty{color:var(--muted);padding:14px 4px;border-top:1px solid var(--line)}
 .note{color:var(--muted);font-size:.82rem;margin:0}
 .summary{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:.88rem}
@@ -77,13 +80,27 @@ h2{font-family:var(--f-display);font-weight:700;font-size:1.15rem;margin:0}
 
   <section class="panel" aria-label="Ajustes">
     <div class="cfg">
-      <label for="amount">Monto por operación (USD)<input id="amount" type="number" min="10" step="10" value="500"></label>
-      <label for="transfer">Costo de mover la moneda (USD)<input id="transfer" type="number" min="0" step="0.1" value="1.5"></label>
+      <label for="amount">Monto por operación (USD)<input id="amount" type="number" min="10" step="10" value="50"></label>
+      <label for="transfer">Costo de mover sin clave (USD)<input id="transfer" type="number" min="0" step="0.1" value="1.5"></label>
       <label for="slip">Deslizamiento por lado (%)<input id="slip" type="number" min="0" step="0.05" value="0.1"></label>
       <label for="minvol">Volumen mínimo 24 h (USD)<select id="minvol"><option value="50000">50 mil</option><option value="200000" selected>200 mil</option><option value="1000000">1 millón</option><option value="5000000">5 millones</option></select></label>
     </div>
     <label class="check" for="onlymine"><input id="onlymine" type="checkbox"> Solo donde tengo cuenta (Binance y Bybit)</label>
-    <p class="note">La ganancia ya descuenta comisión de compra y venta, deslizamiento y el costo de mover la moneda. Se actualiza sola cada 30 segundos mientras la página está abierta.</p>
+    <p class="note">La ganancia ya descuenta comisión de compra y venta, deslizamiento y el costo de mover la moneda (real, por la red más barata, cuando cargás tus claves). Se actualiza sola cada 30 segundos mientras la página está abierta.</p>
+  </section>
+
+  <section class="panel" aria-labelledby="t-acc">
+    <div class="head"><h2 id="t-acc">Tus cuentas y avisos</h2><div class="chips" id="chips-net"></div></div>
+    <p class="note">Claves de <b>solo lectura</b> para conocer la comisión real de cada red y si los retiros están abiertos. Quedan guardadas solo en este celular, no se suben a ningún lado.</p>
+    <div class="cfg">
+      <label for="bnKey">Binance · API Key<input id="bnKey" type="text" autocomplete="off" spellcheck="false"></label>
+      <label for="bnSec">Binance · Secret Key<input id="bnSec" type="password" autocomplete="off"></label>
+      <label for="byKey">Bybit · API Key<input id="byKey" type="text" autocomplete="off" spellcheck="false"></label>
+      <label for="bySec">Bybit · Secret Key<input id="bySec" type="password" autocomplete="off"></label>
+    </div>
+    <div class="actions"><button id="saveKeys" type="button">Guardar claves</button><button id="clearKeys" type="button" class="ghost">Borrar claves</button></div>
+    <div class="cfg"><label for="alertPct">Avisarme desde (% neto)<input id="alertPct" type="number" min="0" step="0.1" value="0.5"></label></div>
+    <div class="actions"><button id="alertsBtn" type="button">Activar avisos</button><span id="alertState" class="note">Avisos apagados.</span></div>
   </section>
 
   <section class="panel" aria-labelledby="t-int">
@@ -118,16 +135,65 @@ const SOURCES = {
     return r.filter(t=>t.currency_pair.endsWith("_USDT")).map(t=>[t.currency_pair.slice(0,-5),+t.highest_bid,+t.lowest_ask,+t.quote_volume]); },
 };
 
-async function getJSON(url, ms=12000){
+async function getJSON(url, opts={}, ms=12000){
   const c = new AbortController(); const tm = setTimeout(()=>c.abort(), ms);
-  try { const r = await fetch(url,{signal:c.signal}); if(!r.ok) throw new Error(r.status); return await r.json(); }
+  try { const r = await fetch(url,{...opts,signal:c.signal}); if(!r.ok) throw new Error(r.status); return await r.json(); }
   finally { clearTimeout(tm); }
+}
+
+/* ---------- Redes: comisiones reales con claves de solo lectura ---------- */
+let NET = {}, netStatus = {};
+const ALIAS = {ARBI:"ARBITRUM",ARB:"ARBITRUM",ARBONE:"ARBITRUM",OP:"OPTIMISM",CAVAX:"AVAXC",POLYGON:"MATIC",POL:"MATIC",BEP20:"BSC",ERC20:"ETH",TRC20:"TRX"};
+const normNet = n => { n = String(n).toUpperCase().replace(/[^A-Z0-9]/g,""); return ALIAS[n] || n; };
+async function hmacHex(secret, msg){
+  const enc = new TextEncoder();
+  const k = await crypto.subtle.importKey("raw", enc.encode(secret), {name:"HMAC", hash:"SHA-256"}, false, ["sign"]);
+  const sig = await crypto.subtle.sign("HMAC", k, enc.encode(msg));
+  return [...new Uint8Array(sig)].map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+function loadKeys(){ try { return JSON.parse(localStorage.getItem("radar-keys")||"{}"); } catch(e){ return {}; } }
+async function netBinance(k, sec){
+  const q = "recvWindow=10000&timestamp=" + Date.now();
+  const r = await getJSON("https://api.binance.com/sapi/v1/capital/config/getall?" + q + "&signature=" + await hmacHex(sec, q), {headers:{"X-MBX-APIKEY":k}});
+  const m = {}; for(const c of r) m[c.coin] = (c.networkList||[]).map(n=>({net:normNet(n.network), fee:+n.withdrawFee, wd:!!n.withdrawEnable, dep:!!n.depositEnable, min:+n.withdrawMin||0}));
+  return m;
+}
+async function netBybit(k, sec){
+  const ts = String(Date.now()), rw = "10000";
+  const r = await getJSON("https://api.bybit.com/v5/asset/coin/query-info", {headers:{"X-BAPI-API-KEY":k, "X-BAPI-TIMESTAMP":ts, "X-BAPI-RECV-WINDOW":rw, "X-BAPI-SIGN": await hmacHex(sec, ts+k+rw)}});
+  if(r.retCode !== 0) throw new Error(r.retMsg);
+  const m = {}; for(const c of r.result.rows) m[c.coin] = (c.chains||[]).map(n=>({net:normNet(n.chain), fee:+n.withdrawFee||0, wd:n.chainWithdraw==="1", dep:n.chainDeposit==="1", min:+n.withdrawMin||0}));
+  return m;
+}
+async function loadNets(){
+  const k = loadKeys(); const nn = {}, ns = {};
+  await Promise.all([["Binance", k.bnKey, k.bnSec, netBinance], ["Bybit", k.byKey, k.bySec, netBybit]].map(async ([ex,key,sec,fn])=>{
+    if(!key || !sec){ ns[ex] = "nokey"; return; }
+    try { nn[ex] = await fn(key.trim(), sec.trim()); ns[ex] = "ok"; } catch(e){ ns[ex] = "err"; }
+  }));
+  NET = nn; netStatus = ns; renderNetChips();
+}
+function renderNetChips(){
+  $("chips-net").innerHTML = Object.entries(netStatus).map(([ex,st])=>`<span class="chip ${st==="ok"?"ok":st==="err"?"err":""}">${ex} ${st==="ok"?"redes ✓":st==="err"?"clave no aceptada":"sin clave"}</span>`).join("");
+}
+/* La red más barata que retira en "from" y deposita en "to". null = sin datos; {ok:false} = no hay red abierta */
+function bestNet(coin, from, to, qty){
+  const A = NET[from]?.[coin], B = NET[to]?.[coin];
+  if(!NET[from] || !NET[to]) return null;
+  if(!A || !B) return {ok:false};
+  let best = {ok:false};
+  for(const a of A){
+    if(!a.wd || (a.min && qty < a.min)) continue;
+    if(!B.some(b=>b.net===a.net && b.dep)) continue;
+    if(!best.ok || a.fee < best.fee) best = {ok:true, net:a.net, fee:a.fee};
+  }
+  return best;
 }
 
 let intData = {}, intStatus = {}, arsData = {}, arsStatus = {}, busy = false;
 
 function settings(){
-  return { amount: Math.max(10, +$("amount").value||500), transfer: Math.max(0, +$("transfer").value||0),
+  return { amount: Math.max(10, +$("amount").value||50), transfer: Math.max(0, +$("transfer").value||0),
     slip: Math.max(0, +$("slip").value||0)/100, minvol: +$("minvol").value, onlymine: $("onlymine").checked };
 }
 function isMine(name){ const n=name.toLowerCase(); return MINE.some(m=>n.includes(m)); }
@@ -155,24 +221,29 @@ function computeInt(){
       if(a.ex===b.ex) continue;
       const buy = a.ask*(1+FEES[a.ex])*(1+s.slip), sell = b.bid*(1-FEES[b.ex])*(1-s.slip);
       const gross = b.bid/a.ask - 1;
-      const net = sell/buy - 1 - s.transfer/s.amount;
-      if(!best || net>best.net) best={coin,buy:a,sell:b,gross,net,usd:net*s.amount};
+      const nb = bestNet(coin, a.ex, b.ex, s.amount/a.ask);
+      if(nb && !nb.ok) continue; // retiros o depósitos cerrados para esta ruta
+      const moveUsd = nb ? nb.fee*a.ask : s.transfer;
+      const net = sell/buy - 1 - moveUsd/s.amount;
+      const flag = nb ? gross > 0.10 : gross > 0.03;
+      if(!best || net>best.net) best={coin,buy:a,sell:b,gross,net,usd:net*s.amount,real:!!nb,netName:nb?nb.net:null,moveUsd,flag,key:"int:"+coin+a.ex+b.ex};
     }
-    opps.push(best);
+    if(best) opps.push(best);
   }
   return opps.sort((x,y)=>y.net-x.net);
 }
 function renderInt(){
   renderChips("chips-int", intStatus);
   const opps = computeInt(); const s = settings();
-  const good = opps.filter(o=>o.net>0 && o.gross<=0.03);
+  const good = opps.filter(o=>o.net>0 && !o.flag);
   $("sum-int").innerHTML = `<span>Monedas comparadas: <b>${opps.length}</b></span><span>Con ganancia neta: <b>${good.length}</b></span>`;
   const top = opps.slice(0,25);
   $("list-int").innerHTML = header("USD") + (top.length ? top.map(o=>{
-    const flag = o.gross>0.03 ? `<span class="flag">Revisar: diferencia sospechosa</span>` : "";
+    const flag = o.flag ? `<span class="flag">Revisar: diferencia sospechosa</span>` : "";
+    const move = o.real ? `<br>Mover por red ${esc(o.netName)} · US$ ${o.moveUsd.toFixed(2)}<span class="real">comisión real</span>` : `<br>Costo de mover estimado · US$ ${o.moveUsd.toFixed(2)}`;
     return `<div class="row"><div class="coin">${esc(o.coin)}</div>
       <div class="route">Comprar en <b>${o.buy.ex}</b>${isMine(o.buy.ex)?'<span class="mine">tu cuenta</span>':''} → vender en <b>${o.sell.ex}</b>${isMine(o.sell.ex)?'<span class="mine">tu cuenta</span>':''}
-      <small>${fmtP(o.buy.ask)} → ${fmtP(o.sell.bid)} · bruto ${fmtPct(o.gross)}</small>${flag}</div>
+      <small>${fmtP(o.buy.ask)} → ${fmtP(o.sell.bid)} · bruto ${fmtPct(o.gross)}${move}</small>${flag}</div>
       <div class="num c-net ${o.net>0?'pos':'neg'}">${fmtPct(o.net)}</div>
       <div class="num c-usd ${o.net>0?'pos':'neg'}">${fmtUsd(o.usd)}</div></div>`;}).join("")
     : `<div class="empty">${Object.keys(intData).length<2 ? "Hacen falta al menos dos exchanges con datos." : "Ninguna moneda pasa los filtros."}</div>`);
@@ -213,9 +284,9 @@ function computeArs(){
       const buy = a.totalAsk*(1+s.slip), sell = b.totalBid*(1-s.slip);
       const cost = buy*vol;
       const net = sell/buy - 1 - (cost? transferArs/cost : 0);
-      if(!best || net>best.net) best={coin,ea,eb,ask:a.totalAsk,bid:b.totalBid,gross:b.totalBid/a.totalAsk-1,net,ars:net*cost};
+      if(!best || net>best.net) best={coin,ea,eb,ask:a.totalAsk,bid:b.totalBid,gross:b.totalBid/a.totalAsk-1,net,ars:net*cost,flag:false,key:"ars:"+coin+ea+eb};
     }
-    opps.push(best);
+    if(best) opps.push(best);
   }
   return opps.sort((x,y)=>y.net-x.net);
 }
@@ -254,12 +325,64 @@ async function refresh(){
   intData=nd; intStatus=ns;
   await loadArs();
   renderInt(); renderArs();
+  checkAlerts();
   $("stamp").textContent = "Última actualización: " + new Date().toLocaleTimeString("es-AR");
   busy=false; $("refresh").disabled=false; $("refresh").textContent="Actualizar";
 }
 
+/* ---------- Avisos ---------- */
+let alertsOn = false, seen = new Set(), audioCtx = null, swReg = null;
+function beep(){
+  if(!audioCtx) return;
+  try { const o = audioCtx.createOscillator(), g = audioCtx.createGain(); o.frequency.value = 880; g.gain.value = .15;
+    o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + .3); } catch(e){}
+}
+function checkAlerts(){
+  if(!alertsOn) return;
+  const th = Math.max(0, +$("alertPct").value || 0) / 100;
+  const hits = [...computeInt(), ...computeArs()].filter(o=>o.net >= th && !o.flag);
+  const fresh = hits.filter(o=>!seen.has(o.key));
+  seen = new Set(hits.map(o=>o.key));
+  if(!fresh.length) return;
+  beep(); try { navigator.vibrate && navigator.vibrate([250,120,250]); } catch(e){}
+  const o = fresh[0];
+  const route = o.buy ? `Comprar en ${o.buy.ex} → vender en ${o.sell.ex}` + (o.real ? ` (red ${o.netName})` : "") : `Comprar en ${exName(o.ea)} → vender en ${exName(o.eb)}`;
+  const gain = o.buy ? fmtUsd(o.usd) : fmtArs(o.ars);
+  try { if(swReg && Notification.permission === "granted")
+    swReg.showNotification(`${o.coin} ${fmtPct(o.net)} · ${gain}`, {body: route + (fresh.length>1 ? ` · y ${fresh.length-1} más` : ""), tag:"radar", renotify:true}); } catch(e){}
+}
+$("alertsBtn").addEventListener("click", async ()=>{
+  try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); await audioCtx.resume(); } catch(e){}
+  try { if("serviceWorker" in navigator) swReg = await navigator.serviceWorker.register("sw.js"); } catch(e){}
+  let perm = "denied"; try { perm = await Notification.requestPermission(); } catch(e){}
+  alertsOn = true; seen = new Set();
+  $("alertsBtn").textContent = "Avisos activados";
+  $("alertState").textContent = perm === "granted" ? "Te aviso con sonido, vibración y notificación mientras el tablero esté abierto." : "Te aviso con sonido y vibración. Las notificaciones están bloqueadas: permitilas en Chrome para este sitio.";
+  beep(); checkAlerts();
+});
+
+/* ---------- Claves ---------- */
+(function fillKeys(){ const k = loadKeys(); $("bnKey").value = k.bnKey||""; $("byKey").value = k.byKey||"";
+  $("bnSec").placeholder = k.bnSec ? "guardada" : ""; $("bySec").placeholder = k.bySec ? "guardada" : ""; })();
+$("saveKeys").addEventListener("click", async ()=>{
+  const k = loadKeys();
+  const v = id => $(id).value.trim();
+  const n = {bnKey:v("bnKey"), bnSec:v("bnSec")||k.bnSec||"", byKey:v("byKey"), bySec:v("bySec")||k.bySec||""};
+  try { localStorage.setItem("radar-keys", JSON.stringify(n)); } catch(e){}
+  $("bnSec").value = ""; $("bySec").value = "";
+  $("bnSec").placeholder = n.bnSec ? "guardada" : ""; $("bySec").placeholder = n.bySec ? "guardada" : "";
+  $("saveKeys").textContent = "Verificando…";
+  await loadNets(); renderInt();
+  $("saveKeys").textContent = "Guardar claves";
+});
+$("clearKeys").addEventListener("click", ()=>{
+  try { localStorage.removeItem("radar-keys"); } catch(e){}
+  ["bnKey","bnSec","byKey","bySec"].forEach(id=>{ $(id).value=""; $(id).placeholder=""; });
+  NET = {}; netStatus = {Binance:"nokey", Bybit:"nokey"}; renderNetChips(); renderInt();
+});
+
 /* recordar ajustes en este navegador */
-const KEYS=["amount","transfer","slip","minvol","onlymine"];
+const KEYS=["amount","transfer","slip","minvol","onlymine","alertPct"];
 try{ const saved=JSON.parse(localStorage.getItem("radar-cfg")||"{}");
   KEYS.forEach(k=>{ if(k in saved){ if(k==="onlymine") $(k).checked=saved[k]; else $(k).value=saved[k]; }}); }catch(e){}
 KEYS.forEach(k=>$(k).addEventListener("change",()=>{
@@ -267,8 +390,9 @@ KEYS.forEach(k=>$(k).addEventListener("change",()=>{
   renderInt(); renderArs();
 }));
 $("refresh").addEventListener("click",refresh);
-refresh();
-setInterval(()=>{ if(!document.hidden) refresh(); },30000);
+loadNets().then(()=>refresh());
+setInterval(()=>{ if(!document.hidden || alertsOn) refresh(); },30000);
+setInterval(()=>{ if(!document.hidden || alertsOn) loadNets(); },600000);
 </script>
 
 </body>
